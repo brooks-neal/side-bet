@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Side Bet</title>
+<meta name="description" content="One phone, two people, something on the line.">
+<meta name="theme-color" content="#1a1216">
+<style>
+  :root {
+    --bg: #1a1216; --bg2: #2a1b22; --card: #fff7ee; --ink: #2a1a1f;
+    --text: #f6e9e4; --muted: #b79aa2; --accent: #e0465e; --gold: #e8b464;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(120% 80% at 50% 0%, var(--bg2), var(--bg) 70%) fixed var(--bg);
+    color: var(--text);
+    font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    max-width: 440px; min-height: 100dvh; margin: 0 auto;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; justify-content: center; gap: 16px;
+  }
+  h1, h2, .card p, .big { font-family: ui-serif, Georgia, "Times New Roman", serif; }
+  h1 { font-size: 52px; line-height: 1; margin: 0; letter-spacing: -1px; }
+  h1 em { color: var(--accent); font-style: italic; }
+  h2 { font-size: 30px; line-height: 1.15; margin: 0; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .eyebrow { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); }
+  .card {
+    background: var(--card); color: var(--ink); border-radius: 18px; padding: 22px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 10px;
+  }
+  .card .eyebrow { color: var(--accent); }
+  .card p { font-size: 25px; line-height: 1.25; }
+  .card small { font: 14px/1.4 -apple-system, sans-serif; color: #7a6168; }
+  .iou { border: 2px dashed var(--accent); text-align: center; }
+  button, input { font: inherit; }
+  button {
+    appearance: none; border: 0; border-radius: 14px; min-height: 54px; padding: 12px 18px;
+    width: 100%; cursor: pointer; font-weight: 600; color: var(--text);
+    background: rgba(255,255,255,.09);
+  }
+  button:active { transform: scale(.98); }
+  button.primary { background: var(--accent); color: #fff; }
+  button.link { background: none; min-height: 44px; color: var(--muted); font-weight: 400; text-decoration: underline; }
+  .row { display: flex; gap: 10px; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  label { font-size: 14px; color: var(--muted); display: block; margin-bottom: 6px; }
+  input {
+    width: 100%; min-height: 54px; padding: 12px 14px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: var(--text);
+  }
+  input:focus, button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .err { color: var(--gold); min-height: 1.4em; font-size: 14px; }
+  .big { font-size: 64px; line-height: 1; text-align: center; }
+  .center { text-align: center; }
+
+  .pads { display: flex; gap: 12px; }
+  .pad {
+    flex: 1; height: 150px; border-radius: 18px; border: 2px solid rgba(255,255,255,.2);
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px;
+    touch-action: none; user-select: none; -webkit-user-select: none; position: relative; overflow: hidden;
+  }
+  .pad.held { border-color: var(--gold); }
+  .pad::before {
+    content: ""; position: absolute; inset: auto 0 0 0; height: 0; background: var(--accent); opacity: .55;
+  }
+  .pads.charging .pad::before { height: 100%; transition: height 1.2s linear; }
+  .pad span { position: relative; }
+
+  .coin {
+    width: 150px; height: 150px; border-radius: 50%; margin: 8px auto; background: var(--gold); color: var(--ink);
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px;
+    font: 600 20px ui-serif, Georgia, serif; box-shadow: inset 0 0 0 6px rgba(0,0,0,.12);
+  }
+  .coin.spin { animation: spin 1.4s ease-out; }
+  @keyframes spin { from { transform: rotateY(0) translateY(0); } 50% { transform: rotateY(1080deg) translateY(-40px); } to { transform: rotateY(2160deg) translateY(0); } }
+  .cards { display: flex; gap: 12px; }
+  .pcard {
+    flex: 1; background: var(--card); color: var(--ink); border-radius: 14px; padding: 16px 8px; text-align: center;
+    animation: pop .5s ease-out backwards;
+  }
+  .pcard:nth-child(2) { animation-delay: .5s; }
+  .pcard b { display: block; font: 600 46px ui-serif, Georgia, serif; }
+  .pcard.red b { color: var(--accent); }
+  @keyframes pop { from { transform: translateY(20px) rotate(-6deg); opacity: 0; } }
+  .tab { border-top: 1px solid rgba(255,255,255,.14); padding-top: 12px; font-size: 15px; }
+  .tab ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .coin.spin, .pcard { animation: none; } }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const BETS = [
+  { kind: 'sides', text: 'The server mentions the specials before we ask.', options: ['Yes', 'No'] },
+  { kind: 'sides', text: 'Who checks their phone first?', options: ['{a}', '{b}'] },
+  { kind: 'sides', text: 'Who finishes their drink first?', options: ['{a}', '{b}'] },
+  { kind: 'sides', text: 'Do we both know the next song that comes on?', options: ['We both know it', 'At least one of us is lost'] },
+  { kind: 'sides', text: 'The next person through the door is on their own.', options: ['Yes', 'No'] },
+  { kind: 'sides', text: 'The bill shows up before we ask for it.', options: ['Yes', 'No'] },
+  { kind: 'sides', text: 'Who gets asked for ID tonight?', options: ['{a}', '{b}', 'Neither of us'] },
+  { kind: 'sides', text: 'We are still out together an hour from now.', options: ['Yes', 'No'] },
+  { kind: 'sides', text: 'Who says "so…" to fill a silence first?', options: ['{a}', '{b}'] },
+  { kind: 'number', text: 'How many minutes until the next thing we order arrives?', unit: 'minutes' },
+  { kind: 'number', text: 'How many people are in this room right now?', unit: 'people' },
+  { kind: 'number', text: 'How many photos are on {b}\'s phone?', unit: 'photos' },
+  { kind: 'number', text: 'How many unread messages does {a} have?', unit: 'messages' },
+  { kind: 'number', text: 'What will the bill come to?', unit: 'total' },
+  { kind: 'number', text: 'How many steps from this seat to the front door?', unit: 'steps' },
+  { kind: 'number', text: 'What year did this place open? Look it up after.', unit: 'year' },
+  { kind: 'chance', game: 'coin', text: 'No skill, no excuses. One coin flip.' },
+  { kind: 'chance', game: 'card', text: 'Each of you draws a card. High card wins.' },
+  { kind: 'duel', text: 'Staring contest. First to blink or laugh loses.' },
+  { kind: 'duel', text: 'Thumb war. Best of three.' },
+  { kind: 'duel', text: 'Rock, paper, scissors. Best of three.' },
+  { kind: 'duel', text: '{a} tells their worst joke. If {b} laughs, {a} wins.' },
+  { kind: 'duel', text: 'Two truths and a lie. {b} tells, {a} guesses. A right guess wins.' },
+  { kind: 'duel', timer: 30, text: 'Name the most countries in 30 seconds each. Keep count for each other.' },
+  { kind: 'duel', text: 'Guess the other person\'s middle name. Three tries each, closest wins.' }
+];
+const STAKES = [
+  'buys dessert',
+  'buys the next round',
+  'plans the second date',
+  'answers any one question, honestly',
+  'gives a real compliment, with eye contact',
+  'shows their most embarrassing photo',
+  'tells their worst date story',
+  'sends the first text tomorrow',
+  'does their best impression of the winner',
+  'tries a bite of whatever the winner picks',
+  'lets the winner order for them next time',
+  'owes one slow dance, location to be decided',
+  'goes wherever the winner picks after this',
+  'brings the coffee next time'
+];
+const KIND_LABEL = { sides: 'Call it', number: 'Closest guess', chance: 'Pure luck', duel: 'Head to head' };
+
+const app = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function deck(items) { let d = shuffle(items), i = -1; return () => { i++; if (i >= d.length) { d = shuffle(items); i = 0; } return d[i]; }; }
+
+const S = { names: ['', ''], bet: null, stake: '', picks: [null, null], tab: store.get('sidebet:tab', []) };
+const nextBet = deck(BETS), nextStake = deck(STAKES);
+const fill = t => t.replaceAll('{a}', S.names[0]).replaceAll('{b}', S.names[1]);
+const f = t => esc(fill(t));
+const name = i => esc(S.names[i]);
+const fmt = n => Number(n).toLocaleString();
+let timers = [];
+function show(html) { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; app.innerHTML = html; window.scrollTo(0, 0); }
+
+const A = {};
+app.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (b && A[b.dataset.act]) A[b.dataset.act](b);
+});
+app.addEventListener('submit', e => {
+  e.preventDefault();
+  const act = e.target.dataset.submit;
+  if (act && A[act]) A[act](e.target);
+});
+
+/* ---------- intro ---------- */
+function intro() {
+  show(`
+    <p class="eyebrow">A game for two</p>
+    <h1>Side <em>Bet</em></h1>
+    <p class="muted">One phone, two people, something on the line. No money, just consequences.</p>
+    <form class="stack" data-submit="start" novalidate>
+      <div><label for="na">Your name</label><input id="na" autocomplete="off" maxlength="20" value="${esc(store.get('sidebet:me', ''))}"></div>
+      <div><label for="nb">Your date's name</label><input id="nb" autocomplete="off" maxlength="20"></div>
+      <p class="err" id="err" role="alert"></p>
+      <button class="primary">Deal us in</button>
+    </form>`);
+}
+A.start = () => {
+  const a = document.getElementById('na').value.trim(), b = document.getElementById('nb').value.trim();
+  if (!a || !b) return void (document.getElementById('err').textContent = 'Both names, please. The app needs to know who owes whom.');
+  if (a.toLowerCase() === b.toLowerCase()) return void (document.getElementById('err').textContent = 'Same name twice. Add an initial so the IOUs make sense.');
+  S.names = [a, b]; store.set('sidebet:me', a);
+  S.bet = nextBet(); betScreen();
+};
+
+/* ---------- choose the bet ---------- */
+function betScreen(custom) {
+  show(`
+    <p class="eyebrow">Step 1 · The bet</p>
+    <div class="card"><span class="eyebrow">${KIND_LABEL[S.bet.kind]}</span><p>${f(S.bet.text)}</p></div>
+    <div class="stack">
+      <button class="primary" data-act="takeBet">We're betting on this</button>
+      <button data-act="dealBet">Deal another</button>
+      ${custom ? `
+      <form class="stack" data-submit="customBet" novalidate>
+        <div><label for="cb">Your own bet</label><input id="cb" maxlength="120" placeholder="I can guess your coffee order"></div>
+        <button>Use our bet</button>
+      </form>` : `<button class="link" data-act="ownBet">Write our own</button>`}
+    </div>`);
+  if (custom) document.getElementById('cb').focus();
+}
+A.dealBet = () => { S.bet = nextBet(); betScreen(); };
+A.ownBet = () => betScreen(true);
+A.customBet = () => {
+  const t = document.getElementById('cb').value.trim();
+  if (!t) return;
+  S.bet = { kind: 'duel', text: t.replace(/[{}]/g, ''), custom: true };
+  A.takeBet();
+};
+A.takeBet = () => {
+  S.picks = [null, null];
+  if (S.bet.kind === 'sides' || S.bet.kind === 'number') cover(0); else stakeScreen(true);
+};
+
+/* ---------- secret picks ---------- */
+function cover(i) {
+  show(`
+    <p class="eyebrow">Step 2 · Secret picks</p>
+    <h2>Pass the phone to ${name(i)}.</h2>
+    <p class="muted">${name(1 - i)}, eyes somewhere else. No peeking.</p>
+    <button class="primary" data-act="pick" data-i="${i}">I'm ${name(i)}, show me</button>`);
+}
+A.pick = b => pick(+b.dataset.i);
+function pick(i) {
+  const body = S.bet.kind === 'sides'
+    ? `<div class="stack">${S.bet.options.map((o, n) => `<button data-act="choose" data-i="${i}" data-n="${n}">${f(o)}</button>`).join('')}</div>`
+    : `<form class="stack" data-submit="guess" data-i="${i}" novalidate>
+         <div><label for="g">Your guess (${esc(S.bet.unit)})</label><input id="g" type="number" inputmode="decimal" step="any"></div>
+         <p class="err" id="err" role="alert"></p>
+         <button class="primary">Lock it in</button>
+       </form>`;
+  show(`
+    <p class="eyebrow">${name(i)}, your call</p>
+    <div class="card"><span class="eyebrow">${KIND_LABEL[S.bet.kind]}</span><p>${f(S.bet.text)}</p></div>
+    ${body}`);
+}
+A.choose = b => locked(+b.dataset.i, +b.dataset.n);
+A.guess = form => {
+  const v = document.getElementById('g').value.trim(), n = Number(v);
+  if (v === '' || !isFinite(n)) return void (document.getElementById('err').textContent = 'Enter a number.');
+  locked(+form.dataset.i, n);
+};
+function locked(i, v) {
+  S.picks[i] = v;
+  if (i === 0) return cover(1);
+  if (S.picks[0] === S.picks[1]) return jinx();
+  stakeScreen(true);
+}
+function jinx() {
+  const same = S.bet.kind === 'sides' ? fill(S.bet.options[S.picks[0]]) : fmt(S.picks[0]);
+  show(`
+    <p class="eyebrow">Jinx</p>
+    <h2>You both said "${esc(same)}".</h2>
+    <p class="muted">Sweet, but there's no bet when you agree. Find something to disagree about.</p>
+    <button class="primary" data-act="dealBet">Deal another bet</button>`);
+}
+
+/* ---------- stakes ---------- */
+function stakeScreen(fresh, custom) {
+  if (fresh) S.stake = nextStake();
+  show(`
+    <p class="eyebrow">Step 3 · The stakes</p>
+    <div class="card"><span class="eyebrow">Loser</span><p>${esc(S.stake)}</p></div>
+    <div class="stack">
+      <button class="primary" data-act="takeStake">Those are the stakes</button>
+      <button data-act="dealStake">Deal another</button>
+      ${custom ? `
+      <form class="stack" data-submit="customStake" novalidate>
+        <div><label for="cs">Loser…</label><input id="cs" maxlength="100" placeholder="walks the winner home"></div>
+        <button>Use our stakes</button>
+      </form>` : `<button class="link" data-act="ownStake">Write our own</button>`}
+    </div>`);
+  if (custom) document.getElementById('cs').focus();
+}
+A.dealStake = () => stakeScreen(true);
+A.ownStake = () => stakeScreen(false, true);
+A.customStake = () => {
+  const t = document.getElementById('cs').value.trim().replace(/^loser\s+/i, '');
+  if (!t) return;
+  S.stake = t; seal();
+};
+A.takeStake = () => seal();
+
+/* ---------- seal it ---------- */
+function seal() {
+  show(`
+    <p class="eyebrow">Step 4 · Shake on it</p>
+    <h2>Both thumbs down to seal it.</h2>
+    <p class="muted">${f(S.bet.text)} Loser ${esc(S.stake)}.</p>
+    <div class="pads" id="pads">
+      <div class="pad" data-p="0"><span>${name(0)}<br>hold here</span></div>
+      <div class="pad" data-p="1"><span>${name(1)}<br>hold here</span></div>
+    </div>
+    <button class="link" data-act="sealed">Only one free hand? Tap to seal</button>`);
+  const pads = document.getElementById('pads'), held = [false, false];
+  let t = null;
+  const check = () => {
+    const both = held[0] && held[1];
+    pads.classList.toggle('charging', both);
+    clearTimeout(t); t = null;
+    if (both) { t = setTimeout(live, 1200); timers.push(t); }
+  };
+  pads.querySelectorAll('.pad').forEach(p => {
+    const i = +p.dataset.p;
+    const set = v => e => { e.preventDefault(); held[i] = v; p.classList.toggle('held', v); check(); };
+    p.addEventListener('pointerdown', set(true));
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => p.addEventListener(ev, set(false)));
+    p.addEventListener('contextmenu', e => e.preventDefault());
+  });
+}
+A.sealed = () => live();
+
+/* ---------- the bet is on ---------- */
+function live() {
+  if (navigator.vibrate) navigator.vibrate(60);
+  const k = S.bet.kind;
+  const hint = k === 'sides' || k === 'number' ? 'Both picks are locked. Put the phone down and come back when you know.'
+    : k === 'chance' ? 'Ready when you are.' : 'Go settle it, then come back.';
+  const btn = k === 'chance' ? (S.bet.game === 'coin' ? 'Flip the coin' : 'Draw the cards') : 'Settle it';
+  show(`
+    <p class="eyebrow">Sealed</p>
+    <h2>The bet is on.</h2>
+    <div class="card"><span class="eyebrow">${KIND_LABEL[k]}</span><p>${f(S.bet.text)}</p><small>Loser ${esc(S.stake)}.</small></div>
+    <p class="muted">${hint}</p>
+    <button class="primary" data-act="settle">${btn}</button>`);
+}
+A.settle = () => ({ sides: settleSides, number: settleNumber, chance: settleChance, duel: settleDuel })[S.bet.kind]();
+
+function settleSides() {
+  show(`
+    <p class="eyebrow">The verdict</p>
+    <h2>So, what happened?</h2>
+    <p class="muted">${f(S.bet.text)}</p>
+    <div class="stack">${S.bet.options.map((o, n) => `<button data-act="outcome" data-n="${n}">${f(o)}</button>`).join('')}</div>`);
+}
+A.outcome = b => {
+  const n = +b.dataset.n, w = S.picks.indexOf(n);
+  const reveal = `${name(0)} said "${f(S.bet.options[S.picks[0]])}". ${name(1)} said "${f(S.bet.options[S.picks[1]])}".`;
+  result(w === -1 ? null : w, reveal);
+};
+function settleNumber() {
+  show(`
+    <p class="eyebrow">The verdict</p>
+    <h2>What's the real number?</h2>
+    <p class="muted">${f(S.bet.text)}</p>
+    <form class="stack" data-submit="actual" novalidate>
+      <div><label for="g">The answer (${esc(S.bet.unit)})</label><input id="g" type="number" inputmode="decimal" step="any"></div>
+      <p class="err" id="err" role="alert"></p>
+      <button class="primary">Reveal the guesses</button>
+    </form>`);
+}
+A.actual = () => {
+  const v = document.getElementById('g').value.trim(), n = Number(v);
+  if (v === '' || !isFinite(n)) return void (document.getElementById('err').textContent = 'Enter a number.');
+  const d = S.picks.map(p => Math.abs(p - n));
+  const reveal = `The answer was ${fmt(n)}. ${name(0)} guessed ${fmt(S.picks[0])}, ${name(1)} guessed ${fmt(S.picks[1])}.`;
+  result(d[0] === d[1] ? null : (d[0] < d[1] ? 0 : 1), reveal);
+};
+function settleChance() {
+  const w = Math.random() < 0.5 ? 0 : 1;
+  if (S.bet.game === 'coin') {
+    show(`
+      <p class="eyebrow">Pure luck</p>
+      <h2>${name(0)} is heads. ${name(1)} is tails.</h2>
+      <div class="coin spin" id="coin">…</div>`);
+    timers.push(setTimeout(() => {
+      document.getElementById('coin').textContent = w === 0 ? 'Heads' : 'Tails';
+      timers.push(setTimeout(() => result(w, `It landed ${w === 0 ? 'heads' : 'tails'}.`), 900));
+    }, 1400));
+  } else {
+    const R = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'], suits = ['♠', '♥', '♦', '♣'];
+    let hi = 1 + Math.floor(Math.random() * 12), lo = Math.floor(Math.random() * hi);
+    const r = w === 0 ? [hi, lo] : [lo, hi];
+    const c = r.map(x => ({ r: R[x], s: suits[Math.floor(Math.random() * 4)] }));
+    show(`
+      <p class="eyebrow">Pure luck</p>
+      <h2>High card wins.</h2>
+      <div class="cards">${c.map((x, i) => `<div class="pcard ${x.s === '♥' || x.s === '♦' ? 'red' : ''}"><b>${x.r}${x.s}</b>${name(i)}</div>`).join('')}</div>`);
+    timers.push(setTimeout(() => result(w, `${name(0)} drew ${c[0].r}${c[0].s}. ${name(1)} drew ${c[1].r}${c[1].s}.`), 2200));
+  }
+}
+function settleDuel() {
+  show(`
+    <p class="eyebrow">The verdict</p>
+    <h2>Who won?</h2>
+    <p class="muted">${f(S.bet.text)}</p>
+    ${S.bet.timer ? `<button data-act="timer" id="tm">Start ${S.bet.timer} seconds</button>` : ''}
+    <div class="row">
+      <button class="primary" data-act="won" data-i="0">${name(0)}</button>
+      <button class="primary" data-act="won" data-i="1">${name(1)}</button>
+    </div>
+    <button class="link" data-act="won" data-i="-1">Honestly, a tie</button>`);
+}
+A.timer = b => {
+  let left = S.bet.timer; b.disabled = true; b.textContent = left;
+  const iv = setInterval(() => {
+    left--;
+    if (left > 0) return void (b.textContent = left);
+    clearInterval(iv); b.disabled = false; b.textContent = `Time. Start another ${S.bet.timer} seconds`;
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  }, 1000);
+  timers.push(iv);
+};
+A.won = b => { const i = +b.dataset.i; result(i < 0 ? null : i, ''); };
+
+/* ---------- result ---------- */
+function tabHtml() {
+  if (!S.tab.length) return '';
+  return `<div class="tab"><span class="eyebrow">Tonight's tab</span>
+    <ul>${S.tab.map(t => `<li>${esc(t.loser)} ${esc(t.stake)} (won by ${esc(t.winner)})</li>`).join('')}</ul>
+    <button class="link" data-act="clearTab">Clear the tab</button></div>`;
+}
+function result(w, reveal) {
+  if (w === null) {
+    return show(`
+      <p class="eyebrow">No winner</p>
+      <h2>Nobody takes it.</h2>
+      <p class="muted">${reveal} The stakes roll over to the next bet.</p>
+      <button class="primary" data-act="again">Deal another bet</button>
+      ${tabHtml()}`);
+  }
+  const win = S.names[w], lose = S.names[1 - w];
+  S.tab.push({ winner: win, loser: lose, stake: S.stake, bet: fill(S.bet.text) });
+  store.set('sidebet:tab', S.tab);
+  if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
+  show(`
+    <p class="eyebrow">Winner</p>
+    <h2>${esc(win)} takes it.</h2>
+    ${reveal ? `<p class="muted">${reveal}</p>` : ''}
+    <div class="card iou"><span class="eyebrow">I owe you</span><p>${esc(lose)} ${esc(S.stake)}.</p><small>Payable to ${esc(win)}. No expiry, no excuses.</small></div>
+    <div class="stack">
+      <button class="primary" data-act="again">Another bet</button>
+      <button data-act="share" id="sh">Send the IOU</button>
+    </div>
+    ${tabHtml()}`);
+}
+A.again = () => { S.bet = nextBet(); betScreen(); };
+A.clearTab = b => { S.tab = []; store.set('sidebet:tab', []); b.closest('.tab').remove(); };
+A.share = async b => {
+  const t = S.tab[S.tab.length - 1];
+  const text = `IOU: ${t.loser} ${t.stake}. Payable to ${t.winner}. Settled fair and square on Side Bet.`;
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); b.textContent = 'Copied. Paste it in a text'; }
+  } catch (e) { if (e.name !== 'AbortError') b.textContent = 'Could not share. Screenshot it instead'; }
+};
+
+intro();
+</script>
+</body>
+</html>
