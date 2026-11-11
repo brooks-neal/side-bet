@@ -90,6 +90,7 @@
   .pcard.red b { color: var(--accent); }
   @keyframes pop { from { transform: translateY(20px) rotate(-6deg); opacity: 0; } }
   .tab { border-top: 1px solid rgba(255,255,255,.14); padding-top: 12px; font-size: 15px; }
+  .note { font-size: 12px; color: var(--muted); text-align: center; opacity: .8; }
   .tab ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { .coin.spin, .pcard { animation: none; } }
 </style>
@@ -142,6 +143,9 @@ const STAKES = [
 ];
 const KIND_LABEL = { sides: 'Call it', number: 'Closest guess', chance: 'Pure luck', duel: 'Head to head' };
 
+/* Paste the Formspree form ID here (the part after /f/ in the form's endpoint) to turn on result logging. */
+const FORMSPREE_ID = '';
+
 const app = document.getElementById('app');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const store = {
@@ -151,14 +155,16 @@ const store = {
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 function deck(items) { let d = shuffle(items), i = -1; return () => { i++; if (i >= d.length) { d = shuffle(items); i = 0; } return d[i]; }; }
 
-const S = { names: ['', ''], bet: null, stake: '', picks: [null, null], tab: store.get('sidebet:tab', []) };
+const S = { mode: 'solo', me: 0, from: 0, id: '', seed: 0, answer: '', link: '', linkText: '', names: ['', ''], bet: null, stake: '', picks: [null, null], tab: store.get('sidebet:tab', []) };
+const rnd = () => Math.floor(Math.random() * 4294967296);
+const needsPicks = () => S.bet.kind === 'sides' || S.bet.kind === 'number';
 const nextBet = deck(BETS), nextStake = deck(STAKES);
 const fill = t => t.replaceAll('{a}', S.names[0]).replaceAll('{b}', S.names[1]);
 const f = t => esc(fill(t));
 const name = i => esc(S.names[i]);
 const fmt = n => Number(n).toLocaleString();
 let timers = [];
-function show(html) { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; app.innerHTML = html; window.scrollTo(0, 0); }
+function show(html) { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; app.innerHTML = html + (FORMSPREE_ID ? '<p class="note">Bets and results are saved to a scoreboard.</p>' : ''); window.scrollTo(0, 0); }
 
 const A = {};
 app.addEventListener('click', e => {
@@ -168,7 +174,7 @@ app.addEventListener('click', e => {
 app.addEventListener('submit', e => {
   e.preventDefault();
   const act = e.target.dataset.submit;
-  if (act && A[act]) A[act](e.target);
+  if (act && A[act]) A[act](e.target, e.submitter);
 });
 
 /* ---------- intro ---------- */
@@ -181,14 +187,17 @@ function intro() {
       <div><label for="na">Your name</label><input id="na" autocomplete="off" maxlength="20" value="${esc(store.get('sidebet:me', ''))}"></div>
       <div><label for="nb">Your date's name</label><input id="nb" autocomplete="off" maxlength="20"></div>
       <p class="err" id="err" role="alert"></p>
-      <button class="primary">Deal us in</button>
+      <button class="primary" data-mode="solo">We're sharing this phone</button>
+      <button data-mode="duo">Send a bet to their phone</button>
     </form>`);
 }
-A.start = () => {
-  const a = document.getElementById('na').value.trim(), b = document.getElementById('nb').value.trim();
+A.start = (form, btn) => {
+  const clean = id => document.getElementById(id).value.replace(/[{}]/g, '').trim();
+  const a = clean('na'), b = clean('nb');
   if (!a || !b) return void (document.getElementById('err').textContent = 'Both names, please. The app needs to know who owes whom.');
   if (a.toLowerCase() === b.toLowerCase()) return void (document.getElementById('err').textContent = 'Same name twice. Add an initial so the IOUs make sense.');
   S.names = [a, b]; store.set('sidebet:me', a);
+  S.mode = btn && btn.dataset.mode === 'duo' ? 'duo' : 'solo'; S.me = 0;
   S.bet = nextBet(); betScreen();
 };
 
@@ -217,8 +226,10 @@ A.customBet = () => {
   A.takeBet();
 };
 A.takeBet = () => {
-  S.picks = [null, null];
-  if (S.bet.kind === 'sides' || S.bet.kind === 'number') cover(0); else stakeScreen(true);
+  S.picks = [null, null]; S.answer = ''; S.seed = rnd(); S.from = S.me;
+  S.id = Math.random().toString(36).slice(2, 10) || 'bet';
+  if (S.mode === 'duo') return needsPicks() ? pick(S.me) : stakeScreen(true);
+  if (needsPicks()) cover(0); else stakeScreen(true);
 };
 
 /* ---------- secret picks ---------- */
@@ -251,6 +262,10 @@ A.guess = form => {
 };
 function locked(i, v) {
   S.picks[i] = v;
+  if (S.mode === 'duo') {
+    if (S.picks[1 - i] === null) return stakeScreen(true);
+    return S.picks[0] === S.picks[1] ? jinx() : replyScreen();
+  }
   if (i === 0) return cover(1);
   if (S.picks[0] === S.picks[1]) return jinx();
   stakeScreen(true);
@@ -261,7 +276,7 @@ function jinx() {
     <p class="eyebrow">Jinx</p>
     <h2>You both said "${esc(same)}".</h2>
     <p class="muted">Sweet, but there's no bet when you agree. Find something to disagree about.</p>
-    <button class="primary" data-act="dealBet">Deal another bet</button>`);
+    <button class="primary" data-act="again">${S.mode === 'duo' ? 'Send ' + name(1 - S.me) + ' a new bet' : 'Deal another bet'}</button>`);
 }
 
 /* ---------- stakes ---------- */
@@ -286,9 +301,10 @@ A.ownStake = () => stakeScreen(false, true);
 A.customStake = () => {
   const t = document.getElementById('cs').value.trim().replace(/^loser\s+/i, '');
   if (!t) return;
-  S.stake = t; seal();
+  S.stake = t; afterStake();
 };
-A.takeStake = () => seal();
+A.takeStake = () => afterStake();
+const afterStake = () => S.mode === 'duo' ? sendScreen() : seal();
 
 /* ---------- seal it ---------- */
 function seal() {
@@ -320,7 +336,7 @@ function seal() {
 A.sealed = () => live();
 
 /* ---------- the bet is on ---------- */
-function live() {
+function live(lead) {
   if (navigator.vibrate) navigator.vibrate(60);
   const k = S.bet.kind;
   const hint = k === 'sides' || k === 'number' ? 'Both picks are locked. Put the phone down and come back when you know.'
@@ -328,7 +344,7 @@ function live() {
   const btn = k === 'chance' ? (S.bet.game === 'coin' ? 'Flip the coin' : 'Draw the cards') : 'Settle it';
   show(`
     <p class="eyebrow">Sealed</p>
-    <h2>The bet is on.</h2>
+    <h2>${typeof lead === 'string' ? esc(lead) + ' ' : ''}The bet is on.</h2>
     <div class="card"><span class="eyebrow">${KIND_LABEL[k]}</span><p>${f(S.bet.text)}</p><small>Loser ${esc(S.stake)}.</small></div>
     <p class="muted">${hint}</p>
     <button class="primary" data-act="settle">${btn}</button>`);
@@ -344,6 +360,7 @@ function settleSides() {
 }
 A.outcome = b => {
   const n = +b.dataset.n, w = S.picks.indexOf(n);
+  S.answer = fill(S.bet.options[n]);
   const reveal = `${name(0)} said "${f(S.bet.options[S.picks[0]])}". ${name(1)} said "${f(S.bet.options[S.picks[1]])}".`;
   result(w === -1 ? null : w, reveal);
 };
@@ -361,12 +378,13 @@ function settleNumber() {
 A.actual = () => {
   const v = document.getElementById('g').value.trim(), n = Number(v);
   if (v === '' || !isFinite(n)) return void (document.getElementById('err').textContent = 'Enter a number.');
+  S.answer = String(n);
   const d = S.picks.map(p => Math.abs(p - n));
   const reveal = `The answer was ${fmt(n)}. ${name(0)} guessed ${fmt(S.picks[0])}, ${name(1)} guessed ${fmt(S.picks[1])}.`;
   result(d[0] === d[1] ? null : (d[0] < d[1] ? 0 : 1), reveal);
 };
 function settleChance() {
-  const w = Math.random() < 0.5 ? 0 : 1;
+  const R0 = rng(S.seed), w = R0() < 0.5 ? 0 : 1;
   if (S.bet.game === 'coin') {
     show(`
       <p class="eyebrow">Pure luck</p>
@@ -374,17 +392,19 @@ function settleChance() {
       <div class="coin spin" id="coin">…</div>`);
     timers.push(setTimeout(() => {
       document.getElementById('coin').textContent = w === 0 ? 'Heads' : 'Tails';
+      S.answer = w === 0 ? 'heads' : 'tails';
       timers.push(setTimeout(() => result(w, `It landed ${w === 0 ? 'heads' : 'tails'}.`), 900));
     }, 1400));
   } else {
     const R = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'], suits = ['♠', '♥', '♦', '♣'];
-    let hi = 1 + Math.floor(Math.random() * 12), lo = Math.floor(Math.random() * hi);
+    let hi = 1 + Math.floor(R0() * 12), lo = Math.floor(R0() * hi);
     const r = w === 0 ? [hi, lo] : [lo, hi];
-    const c = r.map(x => ({ r: R[x], s: suits[Math.floor(Math.random() * 4)] }));
+    const c = r.map(x => ({ r: R[x], s: suits[Math.floor(R0() * 4)] }));
     show(`
       <p class="eyebrow">Pure luck</p>
       <h2>High card wins.</h2>
       <div class="cards">${c.map((x, i) => `<div class="pcard ${x.s === '♥' || x.s === '♦' ? 'red' : ''}"><b>${x.r}${x.s}</b>${name(i)}</div>`).join('')}</div>`);
+    S.answer = c.map(x => x.r + x.s).join(' v ');
     timers.push(setTimeout(() => result(w, `${name(0)} drew ${c[0].r}${c[0].s}. ${name(1)} drew ${c[1].r}${c[1].s}.`), 2200));
   }
 }
@@ -420,6 +440,7 @@ function tabHtml() {
     <button class="link" data-act="clearTab">Clear the tab</button></div>`;
 }
 function result(w, reveal) {
+  log(w);
   if (w === null) {
     return show(`
       <p class="eyebrow">No winner</p>
@@ -443,7 +464,7 @@ function result(w, reveal) {
     </div>
     ${tabHtml()}`);
 }
-A.again = () => { S.bet = nextBet(); betScreen(); };
+A.again = () => { history.replaceState(null, '', location.pathname); S.bet = nextBet(); betScreen(); };
 A.clearTab = b => { S.tab = []; store.set('sidebet:tab', []); b.closest('.tab').remove(); };
 A.share = async b => {
   const t = S.tab[S.tab.length - 1];
@@ -454,7 +475,127 @@ A.share = async b => {
   } catch (e) { if (e.name !== 'AbortError') b.textContent = 'Could not share. Screenshot it instead'; }
 };
 
-intro();
+/* ---------- two phones: bets travel as links ---------- */
+function rng(seed) {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6D2B79F5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const encode = o => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function decode(str) {
+  try {
+    const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+  } catch (e) { return null; }
+}
+function valid(p, reply) {
+  const str = (s, n) => typeof s === 'string' && s.length > 0 && s.length <= n;
+  if (!p || p.v !== 1 || !str(p.id, 16) || !str(p.a, 20) || !str(p.b, 20) || !str(p.stake, 100)) return false;
+  if ((p.from !== 0 && p.from !== 1) || !Number.isInteger(p.seed)) return false;
+  const b = p.bet;
+  if (!b || !KIND_LABEL[b.kind] || !str(b.text, 200)) return false;
+  if (b.kind === 'sides' && !(Array.isArray(b.options) && b.options.length >= 2 && b.options.length <= 4 && b.options.every(o => str(o, 60)))) return false;
+  if (b.kind === 'number' && !str(b.unit, 20)) return false;
+  if (b.kind === 'chance' && b.game !== 'coin' && b.game !== 'card') return false;
+  if (b.timer !== undefined && !(Number.isInteger(b.timer) && b.timer > 0 && b.timer <= 120)) return false;
+  if (!Array.isArray(p.picks) || p.picks.length !== 2) return false;
+  const picks = b.kind === 'sides' || b.kind === 'number';
+  const ok = v => b.kind === 'sides' ? Number.isInteger(v) && v >= 0 && v < b.options.length : typeof v === 'number' && isFinite(v);
+  if (!picks) return p.picks.every(v => v === null);
+  if (!ok(p.picks[p.from])) return false;
+  return reply ? ok(p.picks[1 - p.from]) && p.picks[0] !== p.picks[1] : p.picks[1 - p.from] === null;
+}
+function makeLink(kind) {
+  const b = S.bet, bet = { kind: b.kind, text: fill(b.text) };
+  if (b.options) bet.options = b.options.map(fill);
+  if (b.unit) bet.unit = b.unit;
+  if (b.game) bet.game = b.game;
+  if (b.timer) bet.timer = b.timer;
+  const p = { v: 1, id: S.id, a: S.names[0], b: S.names[1], from: S.from, stake: S.stake, bet, picks: S.picks, seed: S.seed };
+  S.link = location.origin + location.pathname + '#' + kind + '=' + encode(p);
+}
+const linkBox = () => `<div><label for="lk">Or copy the link yourself</label><input id="lk" readonly value="${esc(S.link)}" onfocus="this.select()"></div>`;
+A.shareLink = async b => {
+  try {
+    if (navigator.share) await navigator.share({ text: S.linkText, url: S.link });
+    else { await navigator.clipboard.writeText(S.link); b.textContent = 'Link copied. Paste it in a text'; }
+  } catch (e) { if (e.name !== 'AbortError') b.textContent = 'Copy the link below instead'; }
+};
+function sendScreen() {
+  makeLink('j'); S.linkText = `${S.names[S.me]} has a bet for you.`;
+  show(`
+    <p class="eyebrow">Step 4 · Send it</p>
+    <h2>Send the bet to ${name(1 - S.me)}.</h2>
+    <div class="card"><span class="eyebrow">${KIND_LABEL[S.bet.kind]}</span><p>${f(S.bet.text)}</p><small>Loser ${esc(S.stake)}.</small></div>
+    <p class="muted">${needsPicks() ? 'Your pick is locked and hidden. ' : ''}When ${name(1 - S.me)} joins, they text a link back. Open it and the bet goes live on your phone too.</p>
+    <button class="primary" data-act="shareLink">Text the link</button>
+    ${linkBox()}`);
+}
+function invite() {
+  show(`
+    <p class="eyebrow">A bet from ${name(S.from)}</p>
+    <h2>${name(S.me)}, are you in?</h2>
+    <div class="card"><span class="eyebrow">${KIND_LABEL[S.bet.kind]}</span><p>${f(S.bet.text)}</p><small>Loser ${esc(S.stake)}.</small></div>
+    ${needsPicks() ? `<p class="muted">${name(S.from)} has already locked a pick. You won't see it until the bet is settled.</p>` : ''}
+    <button class="primary" data-act="join">I'm in</button>`);
+}
+A.join = () => { S.seed = (S.seed ^ rnd()) >>> 0; needsPicks() ? pick(S.me) : replyScreen(); };
+function replyScreen() {
+  makeLink('r'); S.linkText = `${S.names[S.me]} is in. The bet is on.`;
+  show(`
+    <p class="eyebrow">You're in</p>
+    <h2>Send it back to ${name(S.from)}.</h2>
+    <p class="muted">This link puts the sealed bet on their phone too.${needsPicks() ? ' Both picks stay hidden until it is settled.' : ''}</p>
+    <button class="primary" data-act="shareLink">Text it back</button>
+    ${linkBox()}
+    <button data-act="sealed">Done, the bet is on</button>`);
+}
+function route() {
+  const m = location.hash.match(/^#([jr])=([\w-]+)$/);
+  if (!m) return location.hash.length > 1 ? broken() : intro();
+  const p = decode(m[2]);
+  if (!valid(p, m[1] === 'r')) return broken();
+  Object.assign(S, { mode: 'duo', names: [p.a, p.b], bet: p.bet, stake: p.stake, picks: p.picks, id: p.id, seed: p.seed >>> 0, from: p.from, answer: '' });
+  if (m[1] === 'j') { S.me = 1 - p.from; invite(); }
+  else { S.me = p.from; live(S.names[1 - p.from] + ' is in.'); }
+}
+function broken() {
+  show(`
+    <p class="eyebrow">Hm</p>
+    <h2>That link didn't survive the trip.</h2>
+    <p class="muted">Ask for it again, or start a fresh bet.</p>
+    <button class="primary" data-act="fresh">Start fresh</button>`);
+}
+A.fresh = () => { history.replaceState(null, '', location.pathname); intro(); };
+
+/* ---------- scoreboard ---------- */
+function log(w) {
+  if (!FORMSPREE_ID || !S.id) return;
+  const sent = store.get('sidebet:sent', []);
+  if (sent.includes(S.id)) return;
+  sent.push(S.id); store.set('sidebet:sent', sent.slice(-200));
+  const k = S.bet.kind;
+  const pickText = i => k === 'sides' ? fill(S.bet.options[S.picks[i]]) : k === 'number' ? String(S.picks[i]) : '';
+  const row = {
+    game: 'side-bet', bet_id: S.id, mode: S.mode === 'duo' ? 'two phones' : 'one phone',
+    logged_from: S.mode === 'duo' ? S.names[S.me] + "'s phone" : 'shared phone',
+    player_a: S.names[0], player_b: S.names[1], bet: fill(S.bet.text), kind: KIND_LABEL[k],
+    pick_a: pickText(0), pick_b: pickText(1), answer: S.answer,
+    winner: w === null ? 'no winner' : S.names[w], loser: w === null ? '' : S.names[1 - w], stake: S.stake
+  };
+  try {
+    fetch('https://formspree.io/f/' + FORMSPREE_ID, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(row)
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+window.addEventListener('hashchange', route);
+route();
 </script>
 </body>
 </html>
